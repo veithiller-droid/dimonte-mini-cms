@@ -4,7 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const bcrypt = require('bcryptjs');
-const { pool } = require('./db');
+const pool = require('./db');
 
 require('dotenv').config();
 
