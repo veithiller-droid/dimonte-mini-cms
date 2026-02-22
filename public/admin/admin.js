@@ -29,6 +29,14 @@ function setMessage(msg, isError = false) {
   els.formMessage.classList.toggle('success', !isError && !!msg);
 }
 
+function todayISO() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function resetForm() {
   els.postId.value = '';
   els.title.value = '';
@@ -38,31 +46,44 @@ function resetForm() {
   els.formTitle.textContent = 'Neuer Eintrag';
   els.saveBtn.textContent = 'Speichern';
   setMessage('');
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const dd = String(today.getDate()).padStart(2, '0');
-  els.post_date.value = `${yyyy}-${mm}-${dd}`;
+  els.post_date.value = todayISO();
 }
 
 async function api(path, options = {}) {
-  const r = await fetch(path, options);
+  const finalOptions = {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    ...options,
+    headers: {
+      ...(options.headers || {})
+    }
+  };
+
+  const r = await fetch(path, finalOptions);
   const data = await r.json().catch(() => ({}));
+
   if (!r.ok || data.ok === false) {
     const msg = data.error || `HTTP ${r.status}`;
     throw new Error(msg);
   }
+
   return data;
 }
 
 async function checkAuth() {
   try {
-    const data = await api('/api/me');
-    if (!data.authenticated) {
+    const data = await api('/api/me', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+
+    if (!data.ok || !data.user) {
       window.location.href = '/admin/login.html';
       return false;
     }
-    els.userInfo.textContent = `Eingeloggt: ${data.username}`;
+
+    els.userInfo.textContent = `Eingeloggt: ${data.user.username}`;
     return true;
   } catch {
     window.location.href = '/admin/login.html';
@@ -78,21 +99,25 @@ function renderPosts(items) {
 
   els.postsList.innerHTML = items
     .map((item) => {
-      const date = String(item.post_date).slice(0, 10);
+      const date = String(item.post_date || '').slice(0, 10);
+      const isPublished = item.status === 'published';
+
       return `
         <article class="list-item" data-id="${item.id}">
           <div class="list-item-head">
-            <strong>${escapeHtml(item.title)}</strong>
-            <span class="badge ${item.status === 'published' ? 'published' : 'draft'}">
-              ${item.status}
+            <strong>${escapeHtml(item.title || '')}</strong>
+            <span class="badge ${isPublished ? 'published' : 'draft'}">
+              ${escapeHtml(item.status || 'draft')}
             </span>
           </div>
           <div class="muted small">
-            ${escapeHtml(item.category || '—')} · ${escapeHtml(date)}
+            ${escapeHtml(item.category || '—')} · ${escapeHtml(date || '—')}
           </div>
           <div class="list-item-actions">
             <button data-action="edit" data-id="${item.id}" class="btn-secondary">Bearbeiten</button>
-            <button data-action="publish" data-id="${item.id}" class="btn-secondary">Publish</button>
+            <button data-action="publish" data-id="${item.id}" class="btn-secondary">
+              ${isPublished ? 'Erneut veröffentlichen' : 'Publish'}
+            </button>
             <button data-action="delete" data-id="${item.id}" class="btn-danger">Löschen</button>
           </div>
         </article>
@@ -102,18 +127,27 @@ function renderPosts(items) {
 }
 
 async function loadPosts() {
-  const data = await api('/api/posts');
+  const data = await api('/api/posts', {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  });
   renderPosts(data.items || []);
 }
 
 async function loadPostIntoForm(id) {
-  const data = await api(`/api/posts/${id}`);
+  const data = await api(`/api/posts/${id}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  });
+
   const p = data.item;
 
   els.postId.value = p.id;
   els.title.value = p.title || '';
   els.category.value = p.category || '';
-  els.post_date.value = String(p.post_date).slice(0, 10);
+  els.post_date.value = String(p.post_date || '').slice(0, 10) || todayISO();
   els.status.value = p.status || 'draft';
   els.body.value = p.body || '';
 
@@ -166,10 +200,41 @@ async function savePost(e) {
   }
 }
 
+async function publishPost(id) {
+  // Deine server.js hat keine /api/posts/:id/publish Route.
+  // Deshalb: bestehenden Eintrag laden und per PUT mit status=published speichern.
+  const current = await api(`/api/posts/${id}`, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  });
+
+  const p = current.item;
+  if (!p) throw new Error('Eintrag nicht gefunden');
+
+  await api(`/api/posts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: p.title || '',
+      category: p.category || '',
+      post_date: String(p.post_date || '').slice(0, 10) || todayISO(),
+      body: p.body || '',
+      status: 'published'
+    }),
+  });
+}
+
 async function logout() {
   try {
-    await api('/api/logout', { method: 'POST' });
-  } catch (_) {}
+    await api('/api/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+  } catch (_) {
+    // egal, trotzdem raus
+  }
   window.location.href = '/admin/login.html';
 }
 
@@ -193,7 +258,7 @@ els.postsList.addEventListener('click', async (e) => {
     }
 
     if (action === 'publish') {
-      await api(`/api/posts/${id}/publish`, { method: 'POST' });
+      await publishPost(id);
       setMessage(`Eintrag #${id} veröffentlicht.`);
       await loadPosts();
       return;
@@ -202,9 +267,19 @@ els.postsList.addEventListener('click', async (e) => {
     if (action === 'delete') {
       const ok = window.confirm(`Eintrag #${id} wirklich löschen?`);
       if (!ok) return;
-      await api(`/api/posts/${id}`, { method: 'DELETE' });
+
+      await api(`/api/posts/${id}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+
       setMessage(`Eintrag #${id} gelöscht.`);
-      if (Number(els.postId.value) === id) resetForm();
+
+      if (Number(els.postId.value) === id) {
+        resetForm();
+      }
+
       await loadPosts();
     }
   } catch (err) {
@@ -215,7 +290,9 @@ els.postsList.addEventListener('click', async (e) => {
 (async function init() {
   const ok = await checkAuth();
   if (!ok) return;
+
   resetForm();
+
   try {
     await loadPosts();
   } catch (e) {
