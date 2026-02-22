@@ -160,15 +160,20 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ ok: false, error: 'Ungültige Zugangsdaten' });
     }
 
-    req.session.user = {
-      username: ADMIN_USERNAME,
-      role: 'admin'
-    };
+  req.session.user = {
+  username: ADMIN_USERNAME,
+  role: 'admin'
+};
 
-    res.json({ ok: true, user: req.session.user });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+req.session.save((err) => {
+  if (err) {
+    return res.status(500).json({ ok: false, error: 'Session konnte nicht gespeichert werden' });
   }
+  res.json({ ok: true, user: req.session.user });
+});
+} catch (e) {
+  res.status(500).json({ ok: false, error: e.message || '' });
+}
 });
 
 app.post('/api/logout', (req, res) => {
