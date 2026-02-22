@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiMonte Mini-CMS Admin</title>
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <div>
+        <h1>DiMonte Mini-CMS</h1>
+        <p class="muted">Titel · Kategorie · Datum · Text</p>
+      </div>
+      <div class="topbar-actions">
+        <span id="userInfo" class="muted"></span>
+        <button id="logoutBtn" class="btn-secondary">Logout</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <section class="card">
+        <h2 id="formTitle">Neuer Eintrag</h2>
+
+        <form id="postForm">
+          <input type="hidden" id="postId" />
+
+          <label>
+            Titel
+            <input type="text" id="title" required />
+          </label>
+
+          <label>
+            Kategorie
+            <input type="text" id="category" placeholder="z. B. Wissen, News, Artikel" />
+          </label>
+
+          <label>
+            Datum
+            <input type="date" id="post_date" required />
+          </label>
+
+          <label>
+            Status
+            <select id="status">
+              <option value="draft">Entwurf</option>
+              <option value="published">Veröffentlicht</option>
+            </select>
+          </label>
+
+          <label>
+            Text
+            <textarea id="body" rows="12" required></textarea>
+          </label>
+
+          <div class="form-actions">
+            <button type="submit" id="saveBtn">Speichern</button>
+            <button type="button" id="resetBtn" class="btn-secondary">Neu</button>
+          </div>
+
+          <p id="formMessage" class="message"></p>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="list-header">
+          <h2>Einträge</h2>
+          <button id="reloadBtn" class="btn-secondary">Neu laden</button>
+        </div>
+
+        <div id="postsList" class="list"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/admin/admin.js"></script>
+</body>
+</html>
