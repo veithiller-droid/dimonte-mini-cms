@@ -11,21 +11,18 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Railway / Reverse Proxy (wichtig für secure cookies in production)
+// Railway / Reverse Proxy
 app.set('trust proxy', 1);
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const IS_PROD = NODE_ENV === 'production';
-
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me';
-const DATABASE_URL_PRESENT = !!process.env.DATABASE_URL;
 
 console.log(`[BOOT] Mini CMS running on port ${PORT}`);
 console.log(`[BOOT] NODE_ENV = ${NODE_ENV}`);
 console.log(`[BOOT] ADMIN_USERNAME = ${ADMIN_USERNAME}`);
-console.log(`[BOOT] DATABASE_URL present = ${DATABASE_URL_PRESENT}`);
+console.log(`[BOOT] DATABASE_URL present = ${!!process.env.DATABASE_URL}`);
 console.log(`[BOOT] SESSION_SECRET present = ${!!SESSION_SECRET}`);
 
 // -----------------------------
@@ -34,7 +31,7 @@ console.log(`[BOOT] SESSION_SECRET present = ${!!SESSION_SECRET}`);
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// CORS für deine Hauptseite (falls getrennte Domain die API abfragt)
+// CORS für Frontend-Website (öffentliche API)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -57,7 +54,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Session-Store in Postgres
+// Sessions (Postgres Store)
 app.use(
   session({
     store: new pgSession({
@@ -69,17 +66,18 @@ app.use(
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    rolling: true,
+    proxy: true,
+    rolling: false,
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: IS_PROD, // dank trust proxy klappt das auf Railway
-      maxAge: 1000 * 60 * 60 * 8 // 8h
+      secure: 'auto',
+      maxAge: 1000 * 60 * 60 * 8 // 8 Stunden
     }
   })
 );
 
-// Statische Admin-Dateien
+// Admin static files
 app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
 
 // -----------------------------
@@ -148,9 +146,12 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ ok: false, error: 'Ungültige Zugangsdaten' });
     }
 
-    // Erlaubt plain Passwort aus ENV oder bcrypt-hash in ENV
     let passwordOk = false;
-    if (ADMIN_PASSWORD.startsWith('$2a$') || ADMIN_PASSWORD.startsWith('$2b$') || ADMIN_PASSWORD.startsWith('$2y$')) {
+    if (
+      ADMIN_PASSWORD.startsWith('$2a$') ||
+      ADMIN_PASSWORD.startsWith('$2b$') ||
+      ADMIN_PASSWORD.startsWith('$2y$')
+    ) {
       passwordOk = await bcrypt.compare(password, ADMIN_PASSWORD);
     } else {
       passwordOk = password === ADMIN_PASSWORD;
@@ -160,29 +161,39 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ ok: false, error: 'Ungültige Zugangsdaten' });
     }
 
-  req.session.user = {
-  username: ADMIN_USERNAME,
-  role: 'admin'
-};
+    // neue Session für Login erzeugen (stabiler)
+    req.session.regenerate((regenErr) => {
+      if (regenErr) {
+        return res.status(500).json({ ok: false, error: 'Session konnte nicht initialisiert werden' });
+      }
 
-req.session.save((err) => {
-  if (err) {
-    return res.status(500).json({ ok: false, error: 'Session konnte nicht gespeichert werden' });
+      req.session.user = {
+        username: ADMIN_USERNAME,
+        role: 'admin'
+      };
+
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          return res.status(500).json({ ok: false, error: 'Session konnte nicht gespeichert werden' });
+        }
+
+        return res.json({ ok: true, user: req.session.user });
+      });
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
-  res.json({ ok: true, user: req.session.user });
-});
-} catch (e) {
-  res.status(500).json({ ok: false, error: e.message || '' });
-}
 });
 
 app.post('/api/logout', (req, res) => {
   if (!req.session) return res.json({ ok: true });
 
   req.session.destroy((err) => {
-    if (err) return res.status(500).json({ ok: false, error: 'Logout fehlgeschlagen' });
+    if (err) {
+      return res.status(500).json({ ok: false, error: 'Logout fehlgeschlagen' });
+    }
     res.clearCookie('dimonte.sid');
-    res.json({ ok: true });
+    return res.json({ ok: true });
   });
 });
 
@@ -190,7 +201,7 @@ app.get('/api/me', (req, res) => {
   if (!req.session || !req.session.user) {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
-  res.json({ ok: true, user: req.session.user });
+  return res.json({ ok: true, user: req.session.user });
 });
 
 // -----------------------------
@@ -198,22 +209,19 @@ app.get('/api/me', (req, res) => {
 // -----------------------------
 app.get('/api/public/posts', async (req, res) => {
   try {
-    const result = await pool.query(
-      `
+    const result = await pool.query(`
       SELECT id, title, category, post_date, body, created_at, updated_at
       FROM posts
       WHERE status = 'published'
       ORDER BY post_date DESC, id DESC
-      `
-    );
+    `);
 
-    res.json({ ok: true, items: result.rows });
+    return res.json({ ok: true, items: result.rows });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
-// NEU: Einzelner veröffentlichter Post per ID
 app.get('/api/public/posts/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -235,9 +243,9 @@ app.get('/api/public/posts/:id', async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
-    res.json({ ok: true, item: result.rows[0] });
+    return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
@@ -246,17 +254,15 @@ app.get('/api/public/posts/:id', async (req, res) => {
 // -----------------------------
 app.get('/api/posts', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      `
+    const result = await pool.query(`
       SELECT id, title, category, post_date, body, status, created_at, updated_at
       FROM posts
       ORDER BY post_date DESC, id DESC
-      `
-    );
+    `);
 
-    res.json({ ok: true, items: result.rows });
+    return res.json({ ok: true, items: result.rows });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
@@ -281,9 +287,9 @@ app.get('/api/posts/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
-    res.json({ ok: true, item: result.rows[0] });
+    return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
@@ -300,9 +306,9 @@ app.post('/api/posts', requireAuth, async (req, res) => {
       [data.title, data.category, data.post_date, data.body, data.status]
     );
 
-    res.json({ ok: true, item: result.rows[0] });
+    return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    res.status(400).json({ ok: false, error: e.message || '' });
+    return res.status(400).json({ ok: false, error: e.message || '' });
   }
 });
 
@@ -334,9 +340,9 @@ app.put('/api/posts/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
-    res.json({ ok: true, item: result.rows[0] });
+    return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    res.status(400).json({ ok: false, error: e.message || '' });
+    return res.status(400).json({ ok: false, error: e.message || '' });
   }
 });
 
@@ -353,15 +359,22 @@ app.delete('/api/posts/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
-    res.json({ ok: true, deletedId: id });
+    return res.json({ ok: true, deletedId: id });
   } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || '' });
+    return res.status(500).json({ ok: false, error: e.message || '' });
   }
+});
+
+// -----------------------------
+// Fallback root
+// -----------------------------
+app.get('/', (req, res) => {
+  res.type('text/plain').send('DiMonte Mini CMS running');
 });
 
 // -----------------------------
 // Start
 // -----------------------------
 app.listen(PORT, () => {
-  // Boot-Logs stehen schon oben
+  // Boot logs oben
 });
