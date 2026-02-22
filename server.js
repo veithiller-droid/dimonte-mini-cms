@@ -1,341 +1,362 @@
-require('dotenv').config();
-
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const session = require('express-session');
-const cookieParser = require('cookie-parser');
+const pgSession = require('connect-pg-simple')(session);
 const bcrypt = require('bcryptjs');
-const pool = require('./db');
+const { pool } = require('./db');
+
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', 1); // <-- HIER EINFÜGEN
+// Railway / Reverse Proxy (wichtig für secure cookies in production)
+app.set('trust proxy', 1);
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-please';
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PROD = NODE_ENV === 'production';
+
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me';
+const DATABASE_URL_PRESENT = !!process.env.DATABASE_URL;
 
-// Optional: hashed password support
-const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '';
+console.log(`[BOOT] Mini CMS running on port ${PORT}`);
+console.log(`[BOOT] NODE_ENV = ${NODE_ENV}`);
+console.log(`[BOOT] ADMIN_USERNAME = ${ADMIN_USERNAME}`);
+console.log(`[BOOT] DATABASE_URL present = ${DATABASE_URL_PRESENT}`);
+console.log(`[BOOT] SESSION_SECRET present = ${!!SESSION_SECRET}`);
 
+// -----------------------------
+// Middleware
+// -----------------------------
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
-app.use(
-  session({
-    name: 'dimonte_admin_session',
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 8, // 8h
-    },
-  })
-);
-
-// --- Request logs (minimal) ---
+// CORS für deine Hauptseite (falls getrennte Domain die API abfragt)
 app.use((req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.path}`);
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://dimontehypnose.de',
+    'https://www.dimontehypnose.de'
+  ];
+
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
   next();
 });
 
-// --- Health ---
+// Session-Store in Postgres
+app.use(
+  session({
+    store: new pgSession({
+      pool,
+      tableName: 'user_sessions',
+      createTableIfMissing: true
+    }),
+    name: 'dimonte.sid',
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    rolling: true,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: IS_PROD, // dank trust proxy klappt das auf Railway
+      maxAge: 1000 * 60 * 60 * 8 // 8h
+    }
+  })
+);
+
+// Statische Admin-Dateien
+app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
+
+// -----------------------------
+// Helpers
+// -----------------------------
+function requireAuth(req, res, next) {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  next();
+}
+
+function normalizePostInput(body) {
+  const title = String(body.title || '').trim();
+  const category = String(body.category || '').trim();
+  const post_date = String(body.post_date || '').trim();
+  const content = String(body.body || '').trim();
+  let status = String(body.status || 'draft').trim().toLowerCase();
+
+  if (!title) throw new Error('Titel fehlt');
+  if (!post_date) throw new Error('Datum fehlt');
+  if (!content) throw new Error('Text fehlt');
+
+  if (!['draft', 'published'].includes(status)) {
+    status = 'draft';
+  }
+
+  return { title, category, post_date, body: content, status };
+}
+
+// -----------------------------
+// Health
+// -----------------------------
 app.get('/health', async (req, res) => {
   try {
-    const result = await pool.query('SELECT NOW() as now');
-    res.json({ ok: true, db: true, now: result.rows[0].now });
+    const r = await pool.query('SELECT NOW() as now');
+    res.json({ ok: true, db: true, now: r.rows[0].now });
   } catch (e) {
-    console.error('[HEALTH] DB error:', e.message);
-    res.status(500).json({ ok: false, db: false, error: e.message });
+    res.status(200).json({ ok: false, db: false, error: e.message || '' });
   }
 });
 
-// --- Init DB route (run once manually, then optional keep/remove) ---
+// -----------------------------
+// DB Init (einmalig)
+// -----------------------------
 app.post('/api/init-db', async (req, res) => {
   try {
-    const sql = `
-      CREATE TABLE IF NOT EXISTS posts (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT '',
-        post_date DATE NOT NULL,
-        body TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
-      CREATE INDEX IF NOT EXISTS idx_posts_post_date ON posts(post_date DESC);
-    `;
+    const schemaPath = path.join(__dirname, 'schema.sql');
+    const sql = fs.readFileSync(schemaPath, 'utf8');
     await pool.query(sql);
     res.json({ ok: true, message: 'DB initialized' });
   } catch (e) {
-    console.error('[INIT-DB] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
-// --- Auth helpers ---
-function requireAuth(req, res, next) {
-  if (req.session && req.session.isAuthenticated) return next();
-  return res.status(401).json({ ok: false, error: 'Unauthorized' });
-}
-
-async function verifyPassword(password) {
-  if (ADMIN_PASSWORD_HASH) {
-    return bcrypt.compare(password, ADMIN_PASSWORD_HASH);
-  }
-  return password === ADMIN_PASSWORD;
-}
-
-// --- Admin static pages ---
-app.use('/admin', express.static(path.join(__dirname, 'public/admin')));
-
-// Redirect root to admin login (optional)
-app.get('/', (req, res) => {
-  res.redirect('/admin/login.html');
-});
-
-// --- Auth API ---
-app.get('/api/me', (req, res) => {
-  res.json({
-    ok: true,
-    authenticated: !!(req.session && req.session.isAuthenticated),
-    username: req.session?.username || null,
-  });
-});
-
+// -----------------------------
+// Auth
+// -----------------------------
 app.post('/api/login', async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '');
 
-    if (!username || !password) {
-      return res.status(400).json({ ok: false, error: 'Username and password required' });
+    if (username !== ADMIN_USERNAME) {
+      return res.status(401).json({ ok: false, error: 'Ungültige Zugangsdaten' });
     }
 
-    const usernameOk = username === ADMIN_USERNAME;
-    const passwordOk = await verifyPassword(password);
-
-    if (!usernameOk || !passwordOk) {
-      return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+    // Erlaubt plain Passwort aus ENV oder bcrypt-hash in ENV
+    let passwordOk = false;
+    if (ADMIN_PASSWORD.startsWith('$2a$') || ADMIN_PASSWORD.startsWith('$2b$') || ADMIN_PASSWORD.startsWith('$2y$')) {
+      passwordOk = await bcrypt.compare(password, ADMIN_PASSWORD);
+    } else {
+      passwordOk = password === ADMIN_PASSWORD;
     }
 
-    req.session.isAuthenticated = true;
-    req.session.username = username;
+    if (!passwordOk) {
+      return res.status(401).json({ ok: false, error: 'Ungültige Zugangsdaten' });
+    }
 
-    return res.json({ ok: true });
+    req.session.user = {
+      username: ADMIN_USERNAME,
+      role: 'admin'
+    };
+
+    res.json({ ok: true, user: req.session.user });
   } catch (e) {
-    console.error('[LOGIN] error:', e);
-    return res.status(500).json({ ok: false, error: 'Login failed' });
+    res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
 app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('dimonte_admin_session');
+  if (!req.session) return res.json({ ok: true });
+
+  req.session.destroy((err) => {
+    if (err) return res.status(500).json({ ok: false, error: 'Logout fehlgeschlagen' });
+    res.clearCookie('dimonte.sid');
     res.json({ ok: true });
   });
 });
 
-// --- Admin Posts API ---
+app.get('/api/me', (req, res) => {
+  if (!req.session || !req.session.user) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  res.json({ ok: true, user: req.session.user });
+});
+
+// -----------------------------
+// Public API
+// -----------------------------
+app.get('/api/public/posts', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT id, title, category, post_date, body, created_at, updated_at
+      FROM posts
+      WHERE status = 'published'
+      ORDER BY post_date DESC, id DESC
+      `
+    );
+
+    res.json({ ok: true, items: result.rows });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || '' });
+  }
+});
+
+// NEU: Einzelner veröffentlichter Post per ID
+app.get('/api/public/posts/:id', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: 'Ungültige ID' });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, title, category, post_date, body, created_at, updated_at
+      FROM posts
+      WHERE id = $1 AND status = 'published'
+      LIMIT 1
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
+    }
+
+    res.json({ ok: true, item: result.rows[0] });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message || '' });
+  }
+});
+
+// -----------------------------
+// Admin API (geschützt)
+// -----------------------------
 app.get('/api/posts', requireAuth, async (req, res) => {
   try {
-    const q = `
+    const result = await pool.query(
+      `
       SELECT id, title, category, post_date, body, status, created_at, updated_at
       FROM posts
       ORDER BY post_date DESC, id DESC
-    `;
-    const result = await pool.query(q);
+      `
+    );
+
     res.json({ ok: true, items: result.rows });
   } catch (e) {
-    console.error('[GET /api/posts] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
 app.get('/api/posts/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'Invalid id' });
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: 'Ungültige ID' });
     }
 
     const result = await pool.query(
-      `SELECT id, title, category, post_date, body, status, created_at, updated_at
-       FROM posts WHERE id = $1`,
+      `
+      SELECT id, title, category, post_date, body, status, created_at, updated_at
+      FROM posts
+      WHERE id = $1
+      LIMIT 1
+      `,
       [id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
     res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    console.error('[GET /api/posts/:id] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
 app.post('/api/posts', requireAuth, async (req, res) => {
   try {
-    const { title, category, post_date, body, status } = req.body || {};
-
-    if (!title || !post_date || !body) {
-      return res.status(400).json({ ok: false, error: 'title, post_date, body are required' });
-    }
-
-    const safeStatus = status === 'published' ? 'published' : 'draft';
+    const data = normalizePostInput(req.body);
 
     const result = await pool.query(
-      `INSERT INTO posts (title, category, post_date, body, status)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, title, category, post_date, body, status, created_at, updated_at`,
-      [title.trim(), (category || '').trim(), post_date, body.trim(), safeStatus]
+      `
+      INSERT INTO posts (title, category, post_date, body, status)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, title, category, post_date, body, status, created_at, updated_at
+      `,
+      [data.title, data.category, data.post_date, data.body, data.status]
     );
 
     res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    console.error('[POST /api/posts] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(400).json({ ok: false, error: e.message || '' });
   }
 });
 
 app.put('/api/posts/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'Invalid id' });
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: 'Ungültige ID' });
     }
 
-    const { title, category, post_date, body, status } = req.body || {};
-    if (!title || !post_date || !body) {
-      return res.status(400).json({ ok: false, error: 'title, post_date, body are required' });
-    }
-
-    const safeStatus = status === 'published' ? 'published' : 'draft';
+    const data = normalizePostInput(req.body);
 
     const result = await pool.query(
-      `UPDATE posts
-       SET title = $1,
-           category = $2,
-           post_date = $3,
-           body = $4,
-           status = $5,
-           updated_at = NOW()
-       WHERE id = $6
-       RETURNING id, title, category, post_date, body, status, created_at, updated_at`,
-      [title.trim(), (category || '').trim(), post_date, body.trim(), safeStatus, id]
+      `
+      UPDATE posts
+      SET title = $1,
+          category = $2,
+          post_date = $3,
+          body = $4,
+          status = $5,
+          updated_at = NOW()
+      WHERE id = $6
+      RETURNING id, title, category, post_date, body, status, created_at, updated_at
+      `,
+      [data.title, data.category, data.post_date, data.body, data.status, id]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
     res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
-    console.error('[PUT /api/posts/:id] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(400).json({ ok: false, error: e.message || '' });
   }
 });
 
 app.delete('/api/posts/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'Invalid id' });
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, error: 'Ungültige ID' });
     }
 
     const result = await pool.query('DELETE FROM posts WHERE id = $1 RETURNING id', [id]);
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     }
 
-    res.json({ ok: true, id });
+    res.json({ ok: true, deletedId: id });
   } catch (e) {
-    console.error('[DELETE /api/posts/:id] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
+    res.status(500).json({ ok: false, error: e.message || '' });
   }
 });
 
-app.post('/api/posts/:id/publish', requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'Invalid id' });
-    }
-
-    const result = await pool.query(
-      `UPDATE posts
-       SET status = 'published', updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, status, updated_at`,
-      [id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
-    }
-
-    res.json({ ok: true, item: result.rows[0] });
-  } catch (e) {
-    console.error('[POST /api/posts/:id/publish] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// --- Public API (published only) ---
-app.get('/api/public/posts', async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, title, category, post_date, body, created_at, updated_at
-       FROM posts
-       WHERE status = 'published'
-       ORDER BY post_date DESC, id DESC`
-    );
-    res.json({ ok: true, items: result.rows });
-  } catch (e) {
-    console.error('[GET /api/public/posts] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-// Optional single public post
-app.get('/api/public/posts/:id', async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) {
-      return res.status(400).json({ ok: false, error: 'Invalid id' });
-    }
-
-    const result = await pool.query(
-      `SELECT id, title, category, post_date, body, created_at, updated_at
-       FROM posts
-       WHERE id = $1 AND status = 'published'`,
-      [id]
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ ok: false, error: 'Not found' });
-    }
-
-    res.json({ ok: true, item: result.rows[0] });
-  } catch (e) {
-    console.error('[GET /api/public/posts/:id] error:', e);
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
+// -----------------------------
+// Start
+// -----------------------------
 app.listen(PORT, () => {
-  console.log(`[BOOT] Mini CMS running on port ${PORT}`);
-  console.log('[BOOT] NODE_ENV =', process.env.NODE_ENV || 'development');
-  console.log('[BOOT] ADMIN_USERNAME =', ADMIN_USERNAME);
-  console.log('[BOOT] DATABASE_URL present =', !!process.env.DATABASE_URL);
-  console.log('[BOOT] SESSION_SECRET present =', !!process.env.SESSION_SECRET);
+  // Boot-Logs stehen schon oben
 });
