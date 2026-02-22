@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DiMonte Admin Login</title>
+  <link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+  <main class="container narrow">
+    <h1>DiMonte Mini-CMS</h1>
+    <p class="muted">Admin Login</p>
+
+    <form id="loginForm" class="card">
+      <label>
+        Benutzername
+        <input type="text" name="username" autocomplete="username" required />
+      </label>
+
+      <label>
+        Passwort
+        <input type="password" name="password" autocomplete="current-password" required />
+      </label>
+
+      <button type="submit">Einloggen</button>
+      <p id="loginError" class="error"></p>
+    </form>
+  </main>
+
+  <script>
+    (async function checkAlreadyLoggedIn() {
+      try {
+        const r = await fetch('/api/me');
+        const data = await r.json();
+        if (data.authenticated) {
+          window.location.href = '/admin/index.html';
+        }
+      } catch (_) {}
+    })();
+
+    const form = document.getElementById('loginForm');
+    const err = document.getElementById('loginError');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+
+      const formData = new FormData(form);
+      const payload = {
+        username: formData.get('username'),
+        password: formData.get('password')
+      };
+
+      try {
+        const r = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await r.json();
+        if (!r.ok || !data.ok) {
+          err.textContent = data.error || 'Login fehlgeschlagen';
+          return;
+        }
+
+        window.location.href = '/admin/index.html';
+      } catch (e2) {
+        err.textContent = 'Netzwerkfehler beim Login';
+      }
+    });
+  </script>
+</body>
+</html>
