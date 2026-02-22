@@ -10,6 +10,8 @@ const pool = require('./db');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', 1); // <-- HIER EINFÜGEN
+
 const SESSION_SECRET = process.env.SESSION_SECRET || 'change-me-please';
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'changeme';
