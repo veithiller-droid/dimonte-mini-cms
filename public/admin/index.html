@@ -397,6 +397,7 @@
         </div>
         <label><span class="label-text">Cal.com Event Slug</span><input type="text" id="prodCalSlug" placeholder="z.B. hypnose-sitzung-60min" /></label>
         <label><span class="label-text">Download URL</span><input type="url" id="prodDownloadUrl" placeholder="https://..." /></label>
+        <label><span class="label-text">Bild (shop1 – shop10)</span><input type="text" id="prodImageSlug" placeholder="z.B. shop1" /></label>
         <div class="form-row">
           <label><span class="label-text">Sortierung</span><input type="number" id="prodSort" value="0" min="0" /></label>
           <label style="display:flex;align-items:center;gap:10px;padding-top:20px;">
@@ -717,6 +718,7 @@ function resetProdForm() {
   document.getElementById('prodType').value = 'sitzung';
   document.getElementById('prodCalSlug').value = '';
   document.getElementById('prodDownloadUrl').value = '';
+  document.getElementById('prodImageSlug').value = '';;
   document.getElementById('prodSort').value = '0';
   document.getElementById('prodActive').checked = true;
   document.getElementById('prodFormTitle').textContent = 'Neues Produkt';
@@ -758,6 +760,7 @@ document.getElementById('prodForm').addEventListener('submit', async (e) => {
     type: document.getElementById('prodType').value,
     cal_event_type_slug: document.getElementById('prodCalSlug').value.trim(),
     download_url: document.getElementById('prodDownloadUrl').value.trim(),
+      image_slug: document.getElementById('prodImageSlug').value.trim(),
     sort_order: document.getElementById('prodSort').value,
     active: document.getElementById('prodActive').checked
   };
@@ -793,6 +796,7 @@ document.getElementById('prodsList').addEventListener('click', async (e) => {
       document.getElementById('prodType').value = p.type;
       document.getElementById('prodCalSlug').value = p.cal_event_type_slug || '';
       document.getElementById('prodDownloadUrl').value = p.download_url || '';
+      document.getElementById('prodImageSlug').value = p.image_slug || '';
       document.getElementById('prodSort').value = p.sort_order || 0;
       document.getElementById('prodActive').checked = p.active;
       document.getElementById('prodFormTitle').textContent = `Bearbeiten (#${p.id})`;
