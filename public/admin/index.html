@@ -3,77 +3,892 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DiMonte Mini-CMS Admin</title>
-  <link rel="stylesheet" href="/admin/admin.css" />
+  <title>DiMonte Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --brown: #2a1005;
+      --brown-mid: #5a3a25;
+      --cream: #fff6ea;
+      --cream-dark: #f5ede0;
+      --green: #1b2d18;
+      --green-light: rgba(27,45,24,0.07);
+      --border: rgba(42,16,5,0.1);
+      --red: #b91c1c;
+      --orange: #c2410c;
+      --font-display: 'Georgia', serif;
+      --font-ui: system-ui, -apple-system, sans-serif;
+      --radius: 3px;
+      --shadow: 0 1px 4px rgba(42,16,5,0.08);
+    }
+
+    body {
+      font-family: var(--font-ui);
+      background: var(--cream-dark);
+      color: var(--brown);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      background: var(--brown);
+      color: var(--cream);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topbar__logo {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      letter-spacing: 0.04em;
+      color: var(--cream);
+    }
+    .topbar__logo span { opacity: 0.5; margin: 0 6px; }
+    .topbar__right { display: flex; align-items: center; gap: 16px; }
+    .topbar__user { font-size: 0.75rem; opacity: 0.6; }
+    .btn-logout {
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,246,234,0.6);
+      background: none;
+      border: 1px solid rgba(255,246,234,0.2);
+      padding: 4px 10px;
+      cursor: pointer;
+      border-radius: var(--radius);
+      transition: all 0.15s;
+    }
+    .btn-logout:hover { color: var(--cream); border-color: rgba(255,246,234,0.5); }
+
+    /* ── TABS ── */
+    .tabs {
+      background: var(--brown);
+      border-bottom: 1px solid rgba(255,246,234,0.08);
+      display: flex;
+      padding: 0 24px;
+      gap: 2px;
+    }
+    .tab {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: rgba(255,246,234,0.45);
+      padding: 10px 16px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      position: relative;
+    }
+    .tab:hover { color: rgba(255,246,234,0.8); }
+    .tab.active { color: var(--cream); border-bottom-color: #c2410c; }
+    .tab .badge {
+      display: inline-block;
+      background: var(--orange);
+      color: white;
+      font-size: 0.6rem;
+      padding: 1px 5px;
+      border-radius: 10px;
+      margin-left: 5px;
+      font-weight: 700;
+    }
+
+    /* ── LAYOUT ── */
+    .page { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* ── CARDS ── */
+    .card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title {
+      font-family: var(--font-display);
+      font-size: 0.95rem;
+      font-weight: normal;
+    }
+
+    /* ── FORMS ── */
+    label { display: block; margin-bottom: 12px; }
+    .label-text {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--green);
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="date"],
+    input[type="number"],
+    input[type="url"],
+    select,
+    textarea {
+      width: 100%;
+      background: var(--cream-dark);
+      border: 1.5px solid var(--border);
+      padding: 8px 10px;
+      font-family: var(--font-ui);
+      font-size: 0.875rem;
+      color: var(--brown);
+      border-radius: var(--radius);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--green); }
+    textarea { min-height: 100px; resize: vertical; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+    /* ── BUTTONS ── */
+    .btn {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 7px 14px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary { background: var(--green); color: var(--cream); }
+    .btn-primary:hover { opacity: 0.85; }
+    .btn-secondary { background: transparent; color: var(--brown-mid); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--brown-mid); }
+    .btn-danger { background: transparent; color: var(--red); border: 1px solid rgba(185,28,28,0.2); }
+    .btn-danger:hover { background: rgba(185,28,28,0.06); }
+    .btn-sm { font-size: 0.65rem; padding: 4px 9px; }
+
+    /* ── MESSAGES ── */
+    .msg { font-size: 0.8rem; padding: 8px 10px; border-radius: var(--radius); margin-top: 10px; }
+    .msg.success { background: rgba(27,45,24,0.08); color: var(--green); }
+    .msg.error { background: rgba(185,28,28,0.08); color: var(--red); }
+
+    /* ── LIST ITEMS ── */
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .list-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background: var(--cream-dark);
+      transition: border-color 0.15s;
+    }
+    .list-item:hover { border-color: rgba(42,16,5,0.2); }
+    .list-item.unread { border-left: 3px solid var(--orange); background: #fffbf7; }
+    .list-item__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .list-item__title { font-weight: 600; font-size: 0.875rem; }
+    .list-item__meta { font-size: 0.75rem; color: var(--brown-mid); margin-bottom: 6px; }
+    .list-item__body { font-size: 0.82rem; color: var(--brown-mid); line-height: 1.5; }
+    .list-item__actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+    /* ── BADGES ── */
+    .pill {
+      display: inline-block;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+    }
+    .pill-draft { background: rgba(42,16,5,0.07); color: var(--brown-mid); }
+    .pill-published { background: rgba(27,45,24,0.1); color: var(--green); }
+    .pill-paid { background: rgba(27,45,24,0.1); color: var(--green); }
+    .pill-pending { background: rgba(194,65,12,0.1); color: var(--orange); }
+    .pill-cancelled { background: rgba(185,28,28,0.1); color: var(--red); }
+    .pill-sitzung { background: rgba(27,45,24,0.07); color: var(--green); }
+    .pill-paket { background: rgba(42,16,5,0.07); color: var(--brown-mid); }
+    .pill-event { background: rgba(194,65,12,0.08); color: var(--orange); }
+    .pill-download { background: rgba(42,16,5,0.05); color: var(--brown-mid); }
+
+    /* ── REPLY PANEL ── */
+    .reply-panel {
+      display: none;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .reply-panel.open { display: block; }
+
+    /* ── EMPTY STATE ── */
+    .empty { text-align: center; padding: 40px 20px; color: var(--brown-mid); font-size: 0.85rem; }
+
+    /* ── STATS ROW ── */
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    @media (max-width: 700px) { .stats-row { grid-template-columns: 1fr 1fr; } }
+    .stat-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+    .stat-card__label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brown-mid); margin-bottom: 4px; }
+    .stat-card__value { font-family: var(--font-display); font-size: 1.4rem; color: var(--brown); }
+
+    /* ── TOGGLE ── */
+    .toggle-wrap { display: flex; align-items: center; gap: 8px; }
+    .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0;
+      background: rgba(42,16,5,0.15);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: 0.2s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      left: 3px; top: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--green); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+    .list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .muted { color: var(--brown-mid); font-size: 0.8rem; }
+  </style>
 </head>
 <body>
-  <main class="container">
-    <header class="topbar">
-      <div>
-        <h1>DiMonte Mini-CMS</h1>
-        <p class="muted">Titel · Kategorie · Datum · Text</p>
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="topbar__logo">DiMonte <span>·</span> Admin</div>
+  <div class="topbar__right">
+    <span class="topbar__user" id="userInfo"></span>
+    <button class="btn-logout" id="logoutBtn">Logout</button>
+  </div>
+</header>
+
+<!-- TABS -->
+<nav class="tabs">
+  <button class="tab active" data-tab="inhalte">Inhalte</button>
+  <button class="tab" data-tab="nachrichten">Nachrichten <span class="badge" id="unreadBadge" style="display:none"></span></button>
+  <button class="tab" data-tab="produkte">Produkte</button>
+  <button class="tab" data-tab="bestellungen">Bestellungen</button>
+</nav>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- TAB: INHALTE -->
+<!-- ══════════════════════════════════════════ -->
+<div class="page active" id="page-inhalte">
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title" id="postFormTitle">Neuer Eintrag</h2>
       </div>
-      <div class="topbar-actions">
-        <span id="userInfo" class="muted"></span>
-        <button id="logoutBtn" class="btn-secondary">Logout</button>
-      </div>
-    </header>
-
-    <section class="grid">
-      <section class="card">
-        <h2 id="formTitle">Neuer Eintrag</h2>
-
-        <form id="postForm">
-          <input type="hidden" id="postId" />
-
-          <label>
-            Titel
-            <input type="text" id="title" required />
-          </label>
-
-          <label>
-            Kategorie
-            <input type="text" id="category" placeholder="z. B. Wissen, News, Artikel" />
-          </label>
-
-          <label>
-            Datum
-            <input type="date" id="post_date" required />
-          </label>
-
-          <label>
-            Status
-            <select id="status">
+      <form id="postForm">
+        <input type="hidden" id="postId" />
+        <label><span class="label-text">Titel</span><input type="text" id="postTitle" required /></label>
+        <label><span class="label-text">Kategorie</span><input type="text" id="postCategory" placeholder="z.B. Wissen, News" /></label>
+        <div class="form-row">
+          <label><span class="label-text">Datum</span><input type="date" id="postDate" required /></label>
+          <label><span class="label-text">Status</span>
+            <select id="postStatus">
               <option value="draft">Entwurf</option>
               <option value="published">Veröffentlicht</option>
             </select>
           </label>
-
-          <label>
-            Text
-            <textarea id="body" rows="12" required></textarea>
-          </label>
-
-          <div class="form-actions">
-            <button type="submit" id="saveBtn">Speichern</button>
-            <button type="button" id="resetBtn" class="btn-secondary">Neu</button>
-          </div>
-
-          <p id="formMessage" class="message"></p>
-        </form>
-      </section>
-
-      <section class="card">
-        <div class="list-header">
-          <h2>Einträge</h2>
-          <button id="reloadBtn" class="btn-secondary">Neu laden</button>
         </div>
+        <label><span class="label-text">Text</span><textarea id="postBody" rows="10" required></textarea></label>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="postSaveBtn">Speichern</button>
+          <button type="button" class="btn btn-secondary" id="postResetBtn">Neu</button>
+        </div>
+        <div id="postMsg" class="msg" style="display:none"></div>
+      </form>
+    </div>
 
-        <div id="postsList" class="list"></div>
-      </section>
-    </section>
-  </main>
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Einträge</h2>
+        <button class="btn btn-secondary btn-sm" id="postsReloadBtn">Neu laden</button>
+      </div>
+      <div class="list" id="postsList"></div>
+    </div>
+  </div>
+</div>
 
-  <script src="/admin/admin.js"></script>
+<!-- ══════════════════════════════════════════ -->
+<!-- TAB: NACHRICHTEN -->
+<!-- ══════════════════════════════════════════ -->
+<div class="page" id="page-nachrichten">
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Nachrichten</h2>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:0.78rem;color:var(--brown-mid);">
+          <input type="checkbox" id="showArchived" /> Archivierte anzeigen
+        </label>
+        <button class="btn btn-secondary btn-sm" id="msgsReloadBtn">Neu laden</button>
+      </div>
+    </div>
+    <div class="list" id="msgsList"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- TAB: PRODUKTE -->
+<!-- ══════════════════════════════════════════ -->
+<div class="page" id="page-produkte">
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title" id="prodFormTitle">Neues Produkt</h2>
+      </div>
+      <form id="prodForm">
+        <input type="hidden" id="prodId" />
+        <label><span class="label-text">Name</span><input type="text" id="prodName" required /></label>
+        <label><span class="label-text">Beschreibung</span><textarea id="prodDesc" rows="3"></textarea></label>
+        <div class="form-row">
+          <label><span class="label-text">Preis (€)</span><input type="number" id="prodPrice" step="0.01" min="0" required /></label>
+          <label><span class="label-text">Typ</span>
+            <select id="prodType">
+              <option value="sitzung">Sitzung</option>
+              <option value="paket">Paket</option>
+              <option value="event">Event</option>
+              <option value="download">Download</option>
+            </select>
+          </label>
+        </div>
+        <label><span class="label-text">Cal.com Event Slug</span><input type="text" id="prodCalSlug" placeholder="z.B. hypnose-sitzung-60min" /></label>
+        <label><span class="label-text">Download URL</span><input type="url" id="prodDownloadUrl" placeholder="https://..." /></label>
+        <div class="form-row">
+          <label><span class="label-text">Sortierung</span><input type="number" id="prodSort" value="0" min="0" /></label>
+          <label style="display:flex;align-items:center;gap:10px;padding-top:20px;">
+            <span class="label-text" style="margin:0">Aktiv</span>
+            <label class="toggle">
+              <input type="checkbox" id="prodActive" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary" id="prodSaveBtn">Speichern</button>
+          <button type="button" class="btn btn-secondary" id="prodResetBtn">Neu</button>
+        </div>
+        <div id="prodMsg" class="msg" style="display:none"></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Produkte</h2>
+        <button class="btn btn-secondary btn-sm" id="prodsReloadBtn">Neu laden</button>
+      </div>
+      <div class="list" id="prodsList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════ -->
+<!-- TAB: BESTELLUNGEN -->
+<!-- ══════════════════════════════════════════ -->
+<div class="page" id="page-bestellungen">
+  <div class="stats-row" id="orderStats"></div>
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Bestellungen</h2>
+      <button class="btn btn-secondary btn-sm" id="ordersReloadBtn">Neu laden</button>
+    </div>
+    <div class="list" id="ordersList"></div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str);
+  return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+
+function fmtDateTime(str) {
+  if (!str) return '—';
+  const d = new Date(str);
+  return d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' }) +
+         ' ' + d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+}
+
+function fmtEur(cents) {
+  return (cents / 100).toLocaleString('de-DE', { style:'currency', currency:'EUR' });
+}
+
+function todayISO() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function showMsg(elId, text, isError = false) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = 'msg ' + (isError ? 'error' : 'success');
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    ...opts,
+    headers: { ...(opts.headers || {}) }
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+// ─────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────
+async function checkAuth() {
+  try {
+    const data = await api('/api/me');
+    if (!data.ok || !data.user) { window.location.href = '/admin/login.html'; return false; }
+    document.getElementById('userInfo').textContent = data.user.username;
+    return true;
+  } catch { window.location.href = '/admin/login.html'; return false; }
+}
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await api('/api/logout', { method: 'POST' }).catch(() => {});
+  window.location.href = '/admin/login.html';
+});
+
+// ─────────────────────────────────────────
+// TABS
+// ─────────────────────────────────────────
+const tabLoaders = {
+  inhalte: loadPosts,
+  nachrichten: loadMessages,
+  produkte: loadProducts,
+  bestellungen: loadOrders
+};
+
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('page-' + tab).classList.add('active');
+    if (tabLoaders[tab]) tabLoaders[tab]();
+  });
+});
+
+// ─────────────────────────────────────────
+// TAB: INHALTE
+// ─────────────────────────────────────────
+function resetPostForm() {
+  document.getElementById('postId').value = '';
+  document.getElementById('postTitle').value = '';
+  document.getElementById('postCategory').value = '';
+  document.getElementById('postDate').value = todayISO();
+  document.getElementById('postStatus').value = 'draft';
+  document.getElementById('postBody').value = '';
+  document.getElementById('postFormTitle').textContent = 'Neuer Eintrag';
+  document.getElementById('postSaveBtn').textContent = 'Speichern';
+}
+
+async function loadPosts() {
+  try {
+    const data = await api('/api/posts');
+    const list = document.getElementById('postsList');
+    if (!data.items?.length) { list.innerHTML = '<div class="empty">Noch keine Einträge.</div>'; return; }
+    list.innerHTML = data.items.map(p => `
+      <div class="list-item" data-id="${p.id}">
+        <div class="list-item__head">
+          <span class="list-item__title">${esc(p.title)}</span>
+          <span class="pill pill-${p.status}">${p.status === 'published' ? 'Veröff.' : 'Entwurf'}</span>
+        </div>
+        <div class="list-item__meta">${esc(p.category || '—')} · ${fmtDate(p.post_date)}</div>
+        <div class="list-item__actions">
+          <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${p.id}">Bearbeiten</button>
+          <button class="btn btn-secondary btn-sm" data-action="publish" data-id="${p.id}">${p.status === 'published' ? 'Erneut veröff.' : 'Publish'}</button>
+          <button class="btn btn-danger btn-sm" data-action="delete" data-id="${p.id}">Löschen</button>
+        </div>
+      </div>`).join('');
+  } catch(e) { showMsg('postMsg', e.message, true); }
+}
+
+async function loadPostIntoForm(id) {
+  const data = await api(`/api/posts/${id}`);
+  const p = data.item;
+  document.getElementById('postId').value = p.id;
+  document.getElementById('postTitle').value = p.title;
+  document.getElementById('postCategory').value = p.category || '';
+  document.getElementById('postDate').value = String(p.post_date).slice(0,10);
+  document.getElementById('postStatus').value = p.status;
+  document.getElementById('postBody').value = p.body;
+  document.getElementById('postFormTitle').textContent = `Bearbeiten (#${p.id})`;
+  document.getElementById('postSaveBtn').textContent = 'Aktualisieren';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+document.getElementById('postForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('postId').value;
+  const payload = {
+    title: document.getElementById('postTitle').value.trim(),
+    category: document.getElementById('postCategory').value.trim(),
+    post_date: document.getElementById('postDate').value,
+    status: document.getElementById('postStatus').value,
+    body: document.getElementById('postBody').value.trim()
+  };
+  try {
+    if (id) {
+      await api(`/api/posts/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      showMsg('postMsg', 'Aktualisiert.');
+    } else {
+      await api('/api/posts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      showMsg('postMsg', 'Gespeichert.');
+      resetPostForm();
+    }
+    await loadPosts();
+  } catch(e) { showMsg('postMsg', e.message, true); }
+});
+
+document.getElementById('postResetBtn').addEventListener('click', resetPostForm);
+document.getElementById('postsReloadBtn').addEventListener('click', loadPosts);
+
+document.getElementById('postsList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const action = btn.dataset.action;
+  try {
+    if (action === 'edit') { await loadPostIntoForm(id); return; }
+    if (action === 'delete') {
+      if (!confirm(`Eintrag #${id} löschen?`)) return;
+      await api(`/api/posts/${id}`, { method:'DELETE' });
+      showMsg('postMsg', 'Gelöscht.');
+      await loadPosts();
+    }
+    if (action === 'publish') {
+      const current = await api(`/api/posts/${id}`);
+      const p = current.item;
+      await api(`/api/posts/${id}`, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ ...p, post_date: String(p.post_date).slice(0,10), status:'published' })
+      });
+      showMsg('postMsg', 'Veröffentlicht.');
+      await loadPosts();
+    }
+  } catch(e) { showMsg('postMsg', e.message, true); }
+});
+
+// ─────────────────────────────────────────
+// TAB: NACHRICHTEN
+// ─────────────────────────────────────────
+async function loadMessages() {
+  try {
+    const archived = document.getElementById('showArchived').checked;
+    const data = await api(`/api/messages${archived ? '?archived=true' : ''}`);
+    const badge = document.getElementById('unreadBadge');
+    if (data.unread > 0) { badge.textContent = data.unread; badge.style.display = 'inline'; }
+    else { badge.style.display = 'none'; }
+
+    const list = document.getElementById('msgsList');
+    if (!data.items?.length) { list.innerHTML = '<div class="empty">Keine Nachrichten.</div>'; return; }
+
+    list.innerHTML = data.items.map(m => `
+      <div class="list-item ${m.read ? '' : 'unread'}" data-id="${m.id}">
+        <div class="list-item__head">
+          <span class="list-item__title">${esc(m.name)} <span style="font-weight:400;color:var(--brown-mid);">&lt;${esc(m.email)}&gt;</span></span>
+          <span style="font-size:0.72rem;color:var(--brown-mid);">${fmtDateTime(m.created_at)}</span>
+        </div>
+        ${m.subject ? `<div class="list-item__meta">Betreff: ${esc(m.subject)}</div>` : ''}
+        <div class="list-item__body">${esc(m.body)}</div>
+        <div class="list-item__actions">
+          <button class="btn btn-secondary btn-sm" data-action="reply" data-id="${m.id}">Antworten</button>
+          ${!m.read ? `<button class="btn btn-secondary btn-sm" data-action="read" data-id="${m.id}">Als gelesen</button>` : ''}
+          ${!m.archived ? `<button class="btn btn-secondary btn-sm" data-action="archive" data-id="${m.id}">Archivieren</button>` : ''}
+          <button class="btn btn-danger btn-sm" data-action="delete-msg" data-id="${m.id}">Löschen</button>
+        </div>
+        <div class="reply-panel" id="reply-${m.id}">
+          <label><span class="label-text">Betreff</span><input type="text" id="reply-subject-${m.id}" value="Re: ${esc(m.subject || 'Ihre Anfrage')}" /></label>
+          <label><span class="label-text">Antwort</span><textarea id="reply-body-${m.id}" rows="5" placeholder="Deine Antwort..."></textarea></label>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" data-action="send-reply" data-id="${m.id}">Senden</button>
+            <button class="btn btn-secondary btn-sm" data-action="close-reply" data-id="${m.id}">Abbrechen</button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+document.getElementById('msgsReloadBtn').addEventListener('click', loadMessages);
+document.getElementById('showArchived').addEventListener('change', loadMessages);
+
+document.getElementById('msgsList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const action = btn.dataset.action;
+  try {
+    if (action === 'reply') {
+      document.getElementById(`reply-${id}`).classList.toggle('open');
+      await api(`/api/messages/${id}/read`, { method:'PUT' });
+      return;
+    }
+    if (action === 'close-reply') { document.getElementById(`reply-${id}`).classList.remove('open'); return; }
+    if (action === 'send-reply') {
+      const subject = document.getElementById(`reply-subject-${id}`).value.trim();
+      const body = document.getElementById(`reply-body-${id}`).value.trim();
+      if (!body) return;
+      await api(`/api/messages/${id}/reply`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ subject, body })
+      });
+      document.getElementById(`reply-${id}`).classList.remove('open');
+      await loadMessages();
+      return;
+    }
+    if (action === 'read') { await api(`/api/messages/${id}/read`, { method:'PUT' }); await loadMessages(); return; }
+    if (action === 'archive') { await api(`/api/messages/${id}/archive`, { method:'PUT' }); await loadMessages(); return; }
+    if (action === 'delete-msg') {
+      if (!confirm('Nachricht löschen?')) return;
+      await api(`/api/messages/${id}`, { method:'DELETE' });
+      await loadMessages();
+    }
+  } catch(e) { alert(e.message); }
+});
+
+// ─────────────────────────────────────────
+// TAB: PRODUKTE
+// ─────────────────────────────────────────
+function resetProdForm() {
+  document.getElementById('prodId').value = '';
+  document.getElementById('prodName').value = '';
+  document.getElementById('prodDesc').value = '';
+  document.getElementById('prodPrice').value = '';
+  document.getElementById('prodType').value = 'sitzung';
+  document.getElementById('prodCalSlug').value = '';
+  document.getElementById('prodDownloadUrl').value = '';
+  document.getElementById('prodSort').value = '0';
+  document.getElementById('prodActive').checked = true;
+  document.getElementById('prodFormTitle').textContent = 'Neues Produkt';
+  document.getElementById('prodSaveBtn').textContent = 'Speichern';
+}
+
+async function loadProducts() {
+  try {
+    const data = await api('/api/products');
+    const list = document.getElementById('prodsList');
+    if (!data.items?.length) { list.innerHTML = '<div class="empty">Noch keine Produkte.</div>'; return; }
+    list.innerHTML = data.items.map(p => `
+      <div class="list-item" data-id="${p.id}">
+        <div class="list-item__head">
+          <span class="list-item__title">${esc(p.name)}</span>
+          <span class="pill pill-${p.type}">${p.type}</span>
+        </div>
+        <div class="list-item__meta">
+          ${fmtEur(p.price_cents)} · ${p.active ? '<span style="color:var(--green)">Aktiv</span>' : '<span style="color:var(--brown-mid)">Inaktiv</span>'}
+          ${p.cal_event_type_slug ? ` · Cal: ${esc(p.cal_event_type_slug)}` : ''}
+        </div>
+        ${p.description ? `<div class="list-item__body">${esc(p.description.slice(0,80))}${p.description.length>80?'…':''}</div>` : ''}
+        <div class="list-item__actions">
+          <button class="btn btn-secondary btn-sm" data-action="edit-prod" data-id="${p.id}">Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" data-action="delete-prod" data-id="${p.id}">Löschen</button>
+        </div>
+      </div>`).join('');
+    window._productsCache = data.items;
+  } catch(e) { showMsg('prodMsg', e.message, true); }
+}
+
+document.getElementById('prodForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('prodId').value;
+  const payload = {
+    name: document.getElementById('prodName').value.trim(),
+    description: document.getElementById('prodDesc').value.trim(),
+    price_euros: document.getElementById('prodPrice').value,
+    type: document.getElementById('prodType').value,
+    cal_event_type_slug: document.getElementById('prodCalSlug').value.trim(),
+    download_url: document.getElementById('prodDownloadUrl').value.trim(),
+    sort_order: document.getElementById('prodSort').value,
+    active: document.getElementById('prodActive').checked
+  };
+  try {
+    if (id) {
+      await api(`/api/products/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      showMsg('prodMsg', 'Aktualisiert.');
+    } else {
+      await api('/api/products', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      showMsg('prodMsg', 'Produkt angelegt.');
+      resetProdForm();
+    }
+    await loadProducts();
+  } catch(e) { showMsg('prodMsg', e.message, true); }
+});
+
+document.getElementById('prodResetBtn').addEventListener('click', resetProdForm);
+document.getElementById('prodsReloadBtn').addEventListener('click', loadProducts);
+
+document.getElementById('prodsList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const action = btn.dataset.action;
+  try {
+    if (action === 'edit-prod') {
+      const p = (window._productsCache || []).find(x => x.id === id);
+      if (!p) return;
+      document.getElementById('prodId').value = p.id;
+      document.getElementById('prodName').value = p.name;
+      document.getElementById('prodDesc').value = p.description || '';
+      document.getElementById('prodPrice').value = (p.price_cents / 100).toFixed(2);
+      document.getElementById('prodType').value = p.type;
+      document.getElementById('prodCalSlug').value = p.cal_event_type_slug || '';
+      document.getElementById('prodDownloadUrl').value = p.download_url || '';
+      document.getElementById('prodSort').value = p.sort_order || 0;
+      document.getElementById('prodActive').checked = p.active;
+      document.getElementById('prodFormTitle').textContent = `Bearbeiten (#${p.id})`;
+      document.getElementById('prodSaveBtn').textContent = 'Aktualisieren';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (action === 'delete-prod') {
+      if (!confirm('Produkt löschen?')) return;
+      await api(`/api/products/${id}`, { method:'DELETE' });
+      await loadProducts();
+    }
+  } catch(e) { alert(e.message); }
+});
+
+// ─────────────────────────────────────────
+// TAB: BESTELLUNGEN
+// ─────────────────────────────────────────
+async function loadOrders() {
+  try {
+    const data = await api('/api/orders');
+    const items = data.items || [];
+
+    // Stats
+    const paid = items.filter(o => o.status === 'paid');
+    const revenue = paid.reduce((sum, o) => sum + o.amount_cents, 0);
+    document.getElementById('orderStats').innerHTML = `
+      <div class="stat-card"><div class="stat-card__label">Gesamt</div><div class="stat-card__value">${items.length}</div></div>
+      <div class="stat-card"><div class="stat-card__label">Bezahlt</div><div class="stat-card__value">${paid.length}</div></div>
+      <div class="stat-card"><div class="stat-card__label">Ausstehend</div><div class="stat-card__value">${items.filter(o=>o.status==='pending').length}</div></div>
+      <div class="stat-card"><div class="stat-card__label">Umsatz</div><div class="stat-card__value">${fmtEur(revenue)}</div></div>`;
+
+    const list = document.getElementById('ordersList');
+    if (!items.length) { list.innerHTML = '<div class="empty">Noch keine Bestellungen.</div>'; return; }
+
+    list.innerHTML = items.map(o => `
+      <div class="list-item" data-id="${o.id}">
+        <div class="list-item__head">
+          <span class="list-item__title">${esc(o.product_name || '—')}</span>
+          <span class="pill pill-${o.status}">${o.status}</span>
+        </div>
+        <div class="list-item__meta">
+          ${esc(o.customer_name || '—')} · ${esc(o.customer_email)} · ${fmtEur(o.amount_cents)} · ${fmtDateTime(o.created_at)}
+        </div>
+        ${o.notes ? `<div class="list-item__body">📝 ${esc(o.notes)}</div>` : ''}
+        <div class="list-item__actions">
+          <button class="btn btn-secondary btn-sm" data-action="note" data-id="${o.id}">Notiz</button>
+        </div>
+        <div class="reply-panel" id="note-${o.id}">
+          <label><span class="label-text">Interne Notiz</span><textarea id="note-body-${o.id}" rows="3">${esc(o.notes || '')}</textarea></label>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" data-action="save-note" data-id="${o.id}">Speichern</button>
+            <button class="btn btn-secondary btn-sm" data-action="close-note" data-id="${o.id}">Abbrechen</button>
+          </div>
+        </div>
+      </div>`).join('');
+  } catch(e) { console.error(e); }
+}
+
+document.getElementById('ordersReloadBtn').addEventListener('click', loadOrders);
+
+document.getElementById('ordersList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const action = btn.dataset.action;
+  if (action === 'note') { document.getElementById(`note-${id}`).classList.toggle('open'); return; }
+  if (action === 'close-note') { document.getElementById(`note-${id}`).classList.remove('open'); return; }
+  if (action === 'save-note') {
+    const notes = document.getElementById(`note-body-${id}`).value.trim();
+    try {
+      await api(`/api/orders/${id}/notes`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ notes }) });
+      document.getElementById(`note-${id}`).classList.remove('open');
+      await loadOrders();
+    } catch(e) { alert(e.message); }
+  }
+});
+
+// ─────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────
+(async function init() {
+  const ok = await checkAuth();
+  if (!ok) return;
+  resetPostForm();
+  await loadPosts();
+  // Load unread count silently
+  try {
+    const data = await api('/api/messages');
+    if (data.unread > 0) {
+      const badge = document.getElementById('unreadBadge');
+      badge.textContent = data.unread;
+      badge.style.display = 'inline';
+    }
+  } catch {}
+})();
+</script>
 </body>
 </html>
