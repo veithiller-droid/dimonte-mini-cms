@@ -42,6 +42,7 @@ async function createCheckoutSession(product, customerEmail) {
   const session = await stripe.checkout.sessions.create({
   mode: 'payment',
   payment_method_configuration: 'pmc_1RX7RA2Ru2tLnDIM6DRM7Kth',
+  allow_promotion_codes: true,
   line_items: [{ price: priceId, quantity: 1 }],
   customer_email: customerEmail || undefined,
   success_url: `${BASE_URL}/danke.html?session_id={CHECKOUT_SESSION_ID}`,
