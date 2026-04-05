@@ -26,18 +26,8 @@ console.log(`[BOOT] RESEND_API_KEY present = ${!!process.env.RESEND_API_KEY}`);
 console.log(`[BOOT] CAL_API_KEY present = ${!!process.env.CAL_API_KEY}`);
 
 // ─────────────────────────────────────────
-// STRIPE WEBHOOK — must be before json middleware
+// 1. CORS — muss als erstes kommen
 // ─────────────────────────────────────────
-const shopRouter = require('./shop/index');
-app.use('/api/shop', shopRouter);
-
-// ─────────────────────────────────────────
-// Middleware
-// ─────────────────────────────────────────
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
-
-// CORS
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -56,6 +46,18 @@ app.use((req, res, next) => {
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// ─────────────────────────────────────────
+// 2. STRIPE WEBHOOK — vor json middleware (braucht raw body)
+// ─────────────────────────────────────────
+const shopRouter = require('./shop/index');
+app.use('/api/shop', shopRouter);
+
+// ─────────────────────────────────────────
+// 3. JSON Middleware
+// ─────────────────────────────────────────
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Sessions
 app.use(
@@ -159,9 +161,7 @@ app.post('/api/login', async (req, res) => {
 
     req.session.regenerate((regenErr) => {
       if (regenErr) return res.status(500).json({ ok: false, error: 'Session-Fehler' });
-
       req.session.user = { username: ADMIN_USERNAME, role: 'admin' };
-
       req.session.save((saveErr) => {
         if (saveErr) return res.status(500).json({ ok: false, error: 'Session-Fehler' });
         return res.json({ ok: true, user: req.session.user });
@@ -206,7 +206,6 @@ app.get('/api/public/posts/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Ungültige ID' });
-
     const result = await pool.query(
       `SELECT id, title, category, post_date, body, created_at, updated_at
        FROM posts WHERE id = $1 AND status = 'published' LIMIT 1`,
@@ -220,7 +219,7 @@ app.get('/api/public/posts/:id', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// PUBLIC API — Contact Form (Nachrichten)
+// PUBLIC API — Contact Form
 // ─────────────────────────────────────────
 app.post('/api/public/contact', async (req, res) => {
   try {
@@ -232,7 +231,6 @@ app.post('/api/public/contact', async (req, res) => {
     if (!name || !email || !body) {
       return res.status(400).json({ ok: false, error: 'Name, E-Mail und Nachricht sind Pflichtfelder' });
     }
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ ok: false, error: 'Ungültige E-Mail-Adresse' });
     }
@@ -241,7 +239,6 @@ app.post('/api/public/contact', async (req, res) => {
       'INSERT INTO messages (name, email, subject, body) VALUES ($1, $2, $3, $4)',
       [name, email, subject, body]
     );
-
     return res.json({ ok: true, message: 'Nachricht gesendet' });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });
@@ -280,8 +277,7 @@ app.post('/api/posts', requireAuth, async (req, res) => {
     const data = normalizePostInput(req.body);
     const result = await pool.query(
       `INSERT INTO posts (title, category, post_date, body, status)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [data.title, data.category, data.post_date, data.body, data.status]
     );
     return res.json({ ok: true, item: result.rows[0] });
@@ -327,19 +323,13 @@ app.get('/api/messages', requireAuth, async (req, res) => {
     const showArchived = req.query.archived === 'true';
     const result = await pool.query(
       `SELECT id, name, email, subject, body, read, archived, created_at
-       FROM messages
-       WHERE archived = $1
-       ORDER BY created_at DESC`,
+       FROM messages WHERE archived = $1 ORDER BY created_at DESC`,
       [showArchived]
     );
     const unreadCount = await pool.query(
       `SELECT COUNT(*) FROM messages WHERE read = false AND archived = false`
     );
-    return res.json({
-      ok: true,
-      items: result.rows,
-      unread: parseInt(unreadCount.rows[0].count)
-    });
+    return res.json({ ok: true, items: result.rows, unread: parseInt(unreadCount.rows[0].count) });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });
   }
@@ -380,19 +370,15 @@ app.post('/api/messages/:id/reply', requireAuth, async (req, res) => {
     const id = Number(req.params.id);
     const replyBody = String(req.body.body || '').trim();
     const replySubject = String(req.body.subject || '').trim();
-
     if (!replyBody) return res.status(400).json({ ok: false, error: 'Antworttext fehlt' });
-
     const msg = await pool.query('SELECT * FROM messages WHERE id = $1 LIMIT 1', [id]);
     if (msg.rows.length === 0) return res.status(404).json({ ok: false, error: 'Nachricht nicht gefunden' });
-
     const { sendMessageReply } = require('./shop/delivery');
     await sendMessageReply({
       to: msg.rows[0].email,
       subject: replySubject || `Re: ${msg.rows[0].subject || 'Ihre Anfrage'}`,
       body: replyBody
     });
-
     await pool.query('UPDATE messages SET read = true WHERE id = $1', [id]);
     return res.json({ ok: true });
   } catch (e) {
@@ -405,9 +391,7 @@ app.post('/api/messages/:id/reply', requireAuth, async (req, res) => {
 // ─────────────────────────────────────────
 app.get('/api/products', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM products ORDER BY sort_order ASC, id ASC'
-    );
+    const result = await pool.query('SELECT * FROM products ORDER BY sort_order ASC, id ASC');
     return res.json({ ok: true, items: result.rows });
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message });
@@ -424,18 +408,15 @@ app.post('/api/products', requireAuth, async (req, res) => {
     const download_url = String(req.body.download_url || '').trim() || null;
     const active = req.body.active !== false && req.body.active !== 'false';
     const sort_order = parseInt(req.body.sort_order || 0);
-
     if (!name) return res.status(400).json({ ok: false, error: 'Name fehlt' });
     if (!['sitzung', 'paket', 'event', 'download'].includes(type)) {
       return res.status(400).json({ ok: false, error: 'Ungültiger Typ' });
     }
-
     const result = await pool.query(
       `INSERT INTO products (name, description, price_cents, type, cal_event_type_slug, download_url, active, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [name, description, price_cents, type, cal_event_type_slug, download_url, active, sort_order]
     );
-
     return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
     return res.status(400).json({ ok: false, error: e.message });
@@ -446,7 +427,6 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ ok: false, error: 'Ungültige ID' });
-
     const name = String(req.body.name || '').trim();
     const description = String(req.body.description || '').trim();
     const price_cents = Math.round(parseFloat(req.body.price_euros || 0) * 100);
@@ -455,13 +435,9 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
     const download_url = String(req.body.download_url || '').trim() || null;
     const active = req.body.active !== false && req.body.active !== 'false';
     const sort_order = parseInt(req.body.sort_order || 0);
-
     if (!name) return res.status(400).json({ ok: false, error: 'Name fehlt' });
-
-    // Reset stripe_price_id if price changed (will be recreated on next checkout)
     const current = await pool.query('SELECT price_cents FROM products WHERE id = $1', [id]);
     const priceChanged = current.rows[0]?.price_cents !== price_cents;
-
     const result = await pool.query(
       `UPDATE products
        SET name=$1, description=$2, price_cents=$3, type=$4,
@@ -471,7 +447,6 @@ app.put('/api/products/:id', requireAuth, async (req, res) => {
        WHERE id=$9 RETURNING *`,
       [name, description, price_cents, type, cal_event_type_slug, download_url, active, sort_order, id]
     );
-
     if (result.rows.length === 0) return res.status(404).json({ ok: false, error: 'Nicht gefunden' });
     return res.json({ ok: true, item: result.rows[0] });
   } catch (e) {
@@ -498,8 +473,7 @@ app.get('/api/orders', requireAuth, async (req, res) => {
       `SELECT o.*, p.name as product_name, p.type as product_type
        FROM orders o
        LEFT JOIN products p ON o.product_id = p.id
-       ORDER BY o.created_at DESC
-       LIMIT 200`
+       ORDER BY o.created_at DESC LIMIT 200`
     );
     return res.json({ ok: true, items: result.rows });
   } catch (e) {
@@ -532,15 +506,12 @@ app.get('/api/bookings', requireAuth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// Fallback root
+// Fallback
 // ─────────────────────────────────────────
 app.get('/', (req, res) => {
   res.type('text/plain').send('DiMonte CMS running');
 });
 
-// ─────────────────────────────────────────
-// Start
-// ─────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`[BOOT] Listening on port ${PORT}`);
 });
