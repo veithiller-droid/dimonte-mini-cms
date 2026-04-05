@@ -40,22 +40,23 @@ async function createCheckoutSession(product, customerEmail) {
   }
 
   const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    line_items: [{ price: priceId, quantity: 1 }],
-    customer_email: customerEmail || undefined,
-    success_url: `${BASE_URL}/danke.html?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${BASE_URL}/termin.html`,
+  mode: 'payment',
+  payment_method_configuration: 'pmc_1RX7RA2Ru2tLnDIM6DRM7Kth',
+  line_items: [{ price: priceId, quantity: 1 }],
+  customer_email: customerEmail || undefined,
+  success_url: `${BASE_URL}/danke.html?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: `${BASE_URL}/termin.html`,
+  metadata: {
+    dimonte_product_id: String(product.id),
+    product_type: product.type,
+  },
+  payment_intent_data: {
     metadata: {
       dimonte_product_id: String(product.id),
-      product_type: product.type,
-    },
-    payment_intent_data: {
-      metadata: {
-        dimonte_product_id: String(product.id),
-        product_name: product.name,
-      }
+      product_name: product.name,
     }
-  });
+  }
+});
 
   // Create pending order
   await pool.query(
