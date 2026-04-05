@@ -4,6 +4,10 @@ const pool = require('../db');
 const { createCheckoutSession, handleWebhook } = require('./stripe');
 const { getBookingLink } = require('./calcom');
 const { sendBookingConfirmation, sendDownloadConfirmation, sendAdminNotification } = require('./delivery');
+router.use((req, res, next) => {
+  if (req.path === '/webhook') return next();
+  express.json({ limit: '1mb' })(req, res, next);
+});
 
 // ─────────────────────────────────────────
 // PUBLIC: Get active products
